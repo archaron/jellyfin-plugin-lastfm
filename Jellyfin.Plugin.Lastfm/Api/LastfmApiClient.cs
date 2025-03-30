@@ -1,4 +1,6 @@
-﻿namespace Jellyfin.Plugin.Lastfm.Api
+﻿using System.Text.Json;
+
+namespace Jellyfin.Plugin.Lastfm.Api
 {
     using MediaBrowser.Controller.Entities.Audio;
     using Models;
@@ -242,5 +244,53 @@
 
             return await Get<GetTracksRequest, GetTracksResponse>(request, cancellationToken);
         }
+
+        public async Task<GetArtistInfoResponse> GetArtistInfo(CancellationToken cancellationToken, string musicBrainzId, string artist = "" , string language = "en")
+        {
+            var request = new GetArtistInfoRequest
+            {
+                ApiKey = Strings.Keys.LastfmApiKey,
+                Method = Strings.Methods.ArtistGetInfo,
+                Lang = language,
+                Artist = artist,
+                MBID = musicBrainzId,
+                Secure = true
+            };
+            
+            return await Get<GetArtistInfoRequest, GetArtistInfoResponse>(request, cancellationToken);
+        }
+        
+        public async Task<GetAlbumInfoResponse> GetAlbumInfo(CancellationToken cancellationToken, string musicBrainzId, string artist = "" , string album = "", string language = "en")
+        {
+            var request = new GetAlbumInfoRequest
+            {
+                ApiKey = Strings.Keys.LastfmApiKey,
+                Method = Strings.Methods.AlbumGetInfo,
+                Lang = language,
+                Artist = artist,
+                Album = album,
+                MBID = musicBrainzId,
+                Autocorrect = true,
+                Secure = true
+            };
+            
+            return await Get<GetAlbumInfoRequest, GetAlbumInfoResponse>(request, cancellationToken);
+        }
+        
+        public async Task<ArtistSearchResponse> ArtistSearch(CancellationToken cancellationToken, string artist, int limit = 30 , int page = 1)
+        {
+            var request = new ArtistSearchRequest
+            {
+                ApiKey = Strings.Keys.LastfmApiKey,
+                Method = Strings.Methods.ArtistSearch,
+                Page = page,
+                Limit = limit,
+                Artist = artist,
+                Secure = true
+            };
+           
+            return await Get<ArtistSearchRequest, ArtistSearchResponse>(request, cancellationToken);
+        }
+        
     }
 }

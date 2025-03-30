@@ -1,6 +1,7 @@
 ﻿using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Entities;
 using System.Linq;
+using Jellyfin.Plugin.Lastfm.ExternalIds;
 
 namespace Jellyfin.Plugin.Lastfm.Providers
 {
@@ -63,6 +64,19 @@ namespace Jellyfin.Plugin.Lastfm.Providers
         {
             string id;
             info.ProviderIds.TryGetValue(MetadataProvider.MusicBrainzArtist.ToString(), out id);
+
+            return id;
+        }
+        
+        public static string GetLastfmArtistId(this ArtistInfo info)
+        {
+            info.ProviderIds.TryGetValue(LastfmArtistExternalId.ProviderKey, out var id);
+
+            if (string.IsNullOrEmpty(id))
+            {
+                return info.SongInfos.Select(i => i.GetProviderId(LastfmArtistExternalId.ProviderKey))
+                    .FirstOrDefault(i => !string.IsNullOrEmpty(i));
+            }
 
             return id;
         }

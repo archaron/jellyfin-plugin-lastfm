@@ -5,17 +5,8 @@
     public class BaseLastfmTrack
     {
         [JsonPropertyName("artist")]
-        public LastfmArtist Artist { get; set; }
+        public Artist Artist { get; set; }
 
-        [JsonPropertyName("name")]
-        public string Name { get; set; }
-
-        [JsonPropertyName("mbid")]
-        public string MusicBrainzId { get; set; }
-    }
-
-    public class LastfmArtist
-    {
         [JsonPropertyName("name")]
         public string Name { get; set; }
 

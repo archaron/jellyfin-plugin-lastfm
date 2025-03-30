@@ -16,6 +16,13 @@
         public PluginConfiguration()
         {
             LastfmUsers = new LastfmUser[] { };
+            ApiKey = string.Empty;
         }
+        
+        /// <summary>
+        /// Gets or sets a ApiKey setting.
+        /// </summary>
+        public string ApiKey { get; set; }
+
     }
 }

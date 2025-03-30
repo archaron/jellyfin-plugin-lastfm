@@ -1,4 +1,6 @@
-﻿namespace Jellyfin.Plugin.Lastfm.Providers
+﻿using Jellyfin.Plugin.Lastfm.Models;
+
+namespace Jellyfin.Plugin.Lastfm.Providers
 {
     using MediaBrowser.Common.Configuration;
     using System;
@@ -7,30 +9,30 @@
 
     public static class LastfmHelper
     {
-        public static string GetImageUrl(IHasLastFmImages data, out string size)
+        public static string GetImageUrl(IHasImages data, out string size)
         {
             size = null;
 
-            if (data.image == null)
+            if (data.Images == null)
             {
                 return null;
             }
 
-            var validImages = data.image
-                .Where(i => !string.IsNullOrWhiteSpace(i.url))
+            var validImages = data.Images
+                .Where(i => !string.IsNullOrWhiteSpace(i.Url))
                 .ToList();
 
             var img = validImages
-                .FirstOrDefault(i => string.Equals(i.size, "mega", StringComparison.OrdinalIgnoreCase)) ??
-                data.image.FirstOrDefault(i => string.Equals(i.size, "extralarge", StringComparison.OrdinalIgnoreCase)) ??
-                data.image.FirstOrDefault(i => string.Equals(i.size, "large", StringComparison.OrdinalIgnoreCase)) ??
-                data.image.FirstOrDefault(i => string.Equals(i.size, "medium", StringComparison.OrdinalIgnoreCase)) ??
-                data.image.FirstOrDefault();
+                .FirstOrDefault(i => string.Equals(i.Size, "mega", StringComparison.OrdinalIgnoreCase)) ??
+                data.Images.FirstOrDefault(i => string.Equals(i.Size, "extralarge", StringComparison.OrdinalIgnoreCase)) ??
+                data.Images.FirstOrDefault(i => string.Equals(i.Size, "large", StringComparison.OrdinalIgnoreCase)) ??
+                data.Images.FirstOrDefault(i => string.Equals(i.Size, "medium", StringComparison.OrdinalIgnoreCase)) ??
+                data.Images.FirstOrDefault();
 
             if (img != null)
             {
-                size = img.size;
-                return img.url;
+                size = img.Size;
+                return img.Url;
             }
 
             return null;

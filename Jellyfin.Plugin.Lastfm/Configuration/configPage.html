@@ -12,6 +12,12 @@
         <div data-role="content">
             <div class="content-primary">
                 <form id="LastfmScrobblerConfigurationForm">
+                    <div class="inputContainer">
+                        <input is="emby-input" id="ApiKey" name="ApiKey" type="text" label="Last.FM API key:" />
+                        <div class="fieldDescription">
+                            Create your own token on the <a class="button-link emby-button" target="_blank" href="https://www.last.fm/api/account/create">LastFM application creation page</a>.
+                        </div>
+                    </div>
                     <div class="selectContainer">
                         <select is="emby-select" id="user" name="user" label="Configure Last.fm for:"></select>
                     </div>
@@ -85,6 +91,7 @@
                 loadConfiguration: function () {
                     return ApiClient.getPluginConfiguration(this._pluginUniqueId).then($.proxy(function (config) {
                         this._config = config;
+                        document.querySelector('#ApiKey').value = config.ApiKey;
                     }, this));
                 },
 

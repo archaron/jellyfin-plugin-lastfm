@@ -12,7 +12,9 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-
+using Jellyfin.Plugin.Lastfm.Api;
+using Jellyfin.Plugin.Lastfm.Models;
+using Jellyfin.Plugin.Lastfm.Models.Responses;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Lastfm.Providers
@@ -22,15 +24,16 @@ namespace Jellyfin.Plugin.Lastfm.Providers
         private readonly IHttpClientFactory _httpClientFactory;
 
         private readonly IServerConfigurationManager _config;
-        private readonly ILoggerFactory _loggerFactory;
         private readonly ILogger<LastfmAlbumProvider> _logger;
+        private LastfmApiClient _apiClient;
+        
 
         public LastfmAlbumProvider(IHttpClientFactory httpClientFactory, IServerConfigurationManager config, ILoggerFactory loggerFactory)
         {
             _httpClientFactory = httpClientFactory;
             _config = config;
-            _loggerFactory = loggerFactory;
-            _logger = _loggerFactory.CreateLogger<LastfmAlbumProvider>();
+            _logger = loggerFactory.CreateLogger<LastfmAlbumProvider>();
+            _apiClient = new LastfmApiClient(httpClientFactory, _logger);
         }
 
         public Task<IEnumerable<RemoteSearchResult>> GetSearchResults(AlbumInfo searchInfo, CancellationToken cancellationToken)
@@ -44,29 +47,34 @@ namespace Jellyfin.Plugin.Lastfm.Providers
 
             var musicBrainzId = id.GetProviderId(MetadataProvider.MusicBrainzAlbum) ??
                 id.GetProviderId(MetadataProvider.MusicBrainzReleaseGroup);
+            
+            _logger.LogInformation($"GetMetadata: Getting album {musicBrainzId}");
 
             var lastFmData = await GetAlbumResult(id, cancellationToken).ConfigureAwait(false);
-
-            if (lastFmData != null && lastFmData.album != null)
+            
+            if (lastFmData != null && lastFmData.HasAlbum())
             {
+                _logger.LogInformation($"GetMetadata: Has metadata for album {musicBrainzId}");
+                _logger.LogInformation($"AlbumData: {JsonSerializer.Serialize(lastFmData.Album)}");
                 result.HasMetadata = true;
                 result.Item = new MusicAlbum();
-                ProcessAlbumData(result.Item, lastFmData.album, musicBrainzId);
+                ProcessAlbumData(result.Item, lastFmData.Album, musicBrainzId);
             }
 
             return result;
         }
 
-        private async Task<LastfmGetAlbumResult> GetAlbumResult(AlbumInfo item, CancellationToken cancellationToken)
+        private async Task<GetAlbumInfoResponse> GetAlbumResult(AlbumInfo item, CancellationToken cancellationToken)
         {
             // Try album release Id
             var id = item.GetReleaseId();
             if (!string.IsNullOrEmpty(id))
             {
-                var result = await GetAlbumResult(id, cancellationToken).ConfigureAwait(false);
+                var result = await _apiClient.GetAlbumInfo(cancellationToken,id, "", "", _config.Configuration.PreferredMetadataLanguage).ConfigureAwait(false);
 
-                if (result != null && result.album != null)
+                if (result != null && result.HasAlbum())
                 {
+                    _logger.LogInformation("GetAlbumResult: Found by release id [{0}]: {1}/{2}",  id, result.Album.Artist, result.Album.Name);
                     return result;
                 }
             }
@@ -75,10 +83,11 @@ namespace Jellyfin.Plugin.Lastfm.Providers
             id = item.GetReleaseGroupId();
             if (!string.IsNullOrEmpty(id))
             {
-                var result = await GetAlbumResult(id, cancellationToken).ConfigureAwait(false);
+                var result = await _apiClient.GetAlbumInfo(cancellationToken,id, "", "", _config.Configuration.PreferredMetadataLanguage).ConfigureAwait(false);
 
-                if (result != null && result.album != null)
+                if (result != null && result.HasAlbum())
                 {
+                    _logger.LogInformation("GetAlbumResult: Found by release group id [{0}]: {1}/{2}",  id, result.Album.Artist, result.Album.Name);
                     return result;
                 }
             }
@@ -89,10 +98,11 @@ namespace Jellyfin.Plugin.Lastfm.Providers
 
             foreach (var song in songs.Where(song => !string.IsNullOrEmpty(song.Album) && !string.IsNullOrEmpty(song.AlbumArtists.FirstOrDefault())))
             {
-                var result = await GetAlbumResult(song.AlbumArtists.FirstOrDefault(), song.Album, cancellationToken).ConfigureAwait(false);
-
-                if (result != null && result.album != null)
+                var result = await _apiClient.GetAlbumInfo(cancellationToken,"", song.AlbumArtists.FirstOrDefault(), song.Album, _config.Configuration.PreferredMetadataLanguage).ConfigureAwait(false);
+                
+                if (result != null && result.HasAlbum())
                 {
+                    _logger.LogInformation("GetAlbumResult: Found by songs  [{0}]: {1}/{2}",  id, result.Album.Artist, result.Album.Name);
                     return result;
                 }
             }
@@ -101,57 +111,14 @@ namespace Jellyfin.Plugin.Lastfm.Providers
             {
                 return null;
             }
-
-            return await GetAlbumResult(albumArtist, item.Name, cancellationToken);
+            
+            return  await _apiClient.GetAlbumInfo(cancellationToken,"", albumArtist, item.Name, _config.Configuration.PreferredMetadataLanguage).ConfigureAwait(false);
         }
 
-        private async Task<LastfmGetAlbumResult> GetAlbumResult(string artist, string album, CancellationToken cancellationToken)
+        private void ProcessAlbumData(MusicAlbum item, Album data, string musicBrainzId)
         {
-            // Get albu info using artist and album name
-            var url = LastfmArtistProvider.RootUrl + string.Format("method=album.getInfo&artist={0}&album={1}&api_key={2}&format=json", UrlEncode(artist), UrlEncode(album), LastfmArtistProvider.ApiKey);
-
-            using (var response = await _httpClientFactory.CreateClient().GetAsync(url, cancellationToken).ConfigureAwait(false))
-            {
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                {
-                    using (var reader = new StreamReader(stream))
-                    {
-                        var jsonText = await reader.ReadToEndAsync().ConfigureAwait(false);
-
-                        // Fix their bad json
-                        jsonText = jsonText.Replace("\"#text\"", "\"url\"");
-
-                        return JsonSerializer.Deserialize<LastfmGetAlbumResult>(jsonText);
-                    }
-                }
-            }
-        }
-
-        private async Task<LastfmGetAlbumResult> GetAlbumResult(string musicbraizId, CancellationToken cancellationToken)
-        {
-            // Get albu info using artist and album name
-            var url = LastfmArtistProvider.RootUrl + string.Format("method=album.getInfo&mbid={0}&api_key={1}&format=json", UrlEncode(musicbraizId), LastfmArtistProvider.ApiKey);
-
-            using (var response = await _httpClientFactory.CreateClient().GetAsync(url, cancellationToken).ConfigureAwait(false))
-            {
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                {
-                    using (var reader = new StreamReader(stream))
-                    {
-                        var jsonText = await reader.ReadToEndAsync().ConfigureAwait(false);
-
-                        // Fix their bad json
-                        jsonText = jsonText.Replace("\"#text\"", "\"url\"");
-
-                        return JsonSerializer.Deserialize<LastfmGetAlbumResult>(jsonText);
-                    }
-                }
-            }
-        }
-
-        private void ProcessAlbumData(MusicAlbum item, LastfmAlbum data, string musicBrainzId)
-        {
-            var overview = data.wiki != null ? data.wiki.content : null;
+            _logger.LogInformation("ProcessAlbumData: id={0}, musicAlbum.id={1}, lastfmName={2}", musicBrainzId, item.Id, data.Name);
+            var overview = (data.Wiki != null) ? data.Wiki.Content : null;
 
             if (!item.LockedFields.Contains(MetadataField.Overview))
             {
@@ -161,7 +128,7 @@ namespace Jellyfin.Plugin.Lastfm.Providers
             // Only grab the date here if the album doesn't already have one, since id3 tags are preferred
             DateTime release;
 
-            if (DateTime.TryParse(data.releasedate, out release))
+            if (DateTime.TryParse(data.ReleaseDate, out release))
             {
                 // Lastfm sends back null as sometimes 1901, other times 0
                 if (release.Year > 1901)
@@ -179,12 +146,13 @@ namespace Jellyfin.Plugin.Lastfm.Providers
             }
 
             var url = LastfmHelper.GetImageUrl(data, out string imageSize);
-
+            _logger.LogInformation("GetImageResponse: image url={0}", url);
             if (!string.IsNullOrEmpty(musicBrainzId) && !string.IsNullOrEmpty(url))
             {
                 try
                 {
                     LastfmHelper.SaveImageInfo(_config.ApplicationPaths, musicBrainzId, url, imageSize);
+                    _logger.LogInformation("GetImageResponse: saveImageInfo size={0} path={1}", imageSize, _config.ApplicationPaths.CachePath);
                 }
                 catch (Exception e)
                 {
@@ -220,6 +188,7 @@ namespace Jellyfin.Plugin.Lastfm.Providers
 
         public Task<HttpResponseMessage> GetImageResponse(string url, CancellationToken cancellationToken)
         {
+            _logger.LogInformation("AlbumGetImageResponse: url={0}", url);
             throw new NotImplementedException();
         }
     }
@@ -266,64 +235,64 @@ namespace Jellyfin.Plugin.Lastfm.Providers
         public string size { get; set; }
     }
 
-    public class LastfmArtist : IHasLastFmImages
-    {
-        public string name { get; set; }
-        public string mbid { get; set; }
-        public string url { get; set; }
-        public string streamable { get; set; }
-        public string ontour { get; set; }
-        public LastfmStats stats { get; set; }
-        public List<LastfmArtist> similar { get; set; }
-        public LastfmTags tags { get; set; }
-        public LastFmBio bio { get; set; }
-        public List<LastFmImage> image { get; set; }
-    }
+    // public class LastfmArtist : IHasLastFmImages
+    // {
+    //     public string name { get; set; }
+    //     public string mbid { get; set; }
+    //     public string url { get; set; }
+    //     public string streamable { get; set; }
+    //     public string ontour { get; set; }
+    //     public LastfmStats stats { get; set; }
+    //     public List<LastfmArtist> similar { get; set; }
+    //     public LastfmTags tags { get; set; }
+    //     public LastFmBio bio { get; set; }
+    //     public List<LastFmImage> image { get; set; }
+    // }
 
 
-    public class LastfmAlbum : IHasLastFmImages
-    {
-        public string name { get; set; }
-        public string artist { get; set; }
-        public string id { get; set; }
-        public string mbid { get; set; }
-        public string releasedate { get; set; }
-        public int listeners { get; set; }
-        public int playcount { get; set; }
-        public LastfmTags toptags { get; set; }
-        public LastFmBio wiki { get; set; }
-        public List<LastFmImage> image { get; set; }
-    }
+    // public class LastfmAlbum : IHasLastFmImages
+    // {
+    //     public string name { get; set; }
+    //     public string artist { get; set; }
+    //     public string id { get; set; }
+    //     public string mbid { get; set; }
+    //     public string releasedate { get; set; }
+    //     public int listeners { get; set; }
+    //     public int playcount { get; set; }
+    //     public LastfmTags toptags { get; set; }
+    //     public LastFmBio wiki { get; set; }
+    //     public List<LastFmImage> image { get; set; }
+    // }
+    //
+    // public interface IHasLastFmImages
+    // {
+    //     List<LastFmImage> image { get; set; }
+    // }
+    //
+    // public class LastfmGetAlbumResult
+    // {
+    //     public LastfmAlbum album { get; set; }
+    // }
+    //
+    // public class LastfmGetArtistResult
+    // {
+    //     public LastfmArtist artist { get; set; }
+    // }
+    //
+    // public class Artistmatches
+    // {
+    //     public List<LastfmArtist> artist { get; set; }
+    // }
 
-    public interface IHasLastFmImages
-    {
-        List<LastFmImage> image { get; set; }
-    }
+    // public class LastfmArtistSearchResult
+    // {
+    //     public Artistmatches artistmatches { get; set; }
+    // }
 
-    public class LastfmGetAlbumResult
-    {
-        public LastfmAlbum album { get; set; }
-    }
-
-    public class LastfmGetArtistResult
-    {
-        public LastfmArtist artist { get; set; }
-    }
-
-    public class Artistmatches
-    {
-        public List<LastfmArtist> artist { get; set; }
-    }
-
-    public class LastfmArtistSearchResult
-    {
-        public Artistmatches artistmatches { get; set; }
-    }
-
-    public class LastfmArtistSearchResults
-    {
-        public LastfmArtistSearchResult results { get; set; }
-    }
+    // public class LastfmArtistSearchResults
+    // {
+    //     public LastfmArtistSearchResult results { get; set; }
+    // }
 
     #endregion
 }

@@ -1,7 +1,10 @@
-﻿namespace Jellyfin.Plugin.Lastfm.Utils
+﻿using Jellyfin.Plugin.Lastfm.ExternalIds;
+using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Entities;
+
+namespace Jellyfin.Plugin.Lastfm.Utils
 {
     using MediaBrowser.Controller.Entities.Audio;
-    using Models;
     using Resources;
     using System;
     using System.Collections.Generic;
@@ -71,18 +74,8 @@
         //The nuget doesn't seem to have GetProviderId for artists
         public static string GetMusicBrainzArtistId(MusicArtist artist)
         {
-
-            if (artist.ProviderIds == null)
-            {
-                return null;
-            }
-
-            if (artist.ProviderIds.TryGetValue("MusicBrainzArtist", out string mbArtistId))
-            {
-                return mbArtistId;
-            }
-            return null;
+            return artist.ProviderIds.GetValueOrDefault(MetadataProvider.MusicBrainzArtist.ToString());
         }
-
+        
     }
 }
